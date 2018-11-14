@@ -67,10 +67,9 @@ class Udemy(ProgressBar):
         return re.sub('\.+$', '', text.rstrip()) if text.endswith(".") else text.rstrip()
 
     def _course_name(self, url):
-        if '/learn/v4' in url:
-            url = url.split("learn/v4")[0]
-        course_name = url.split("/")[-1] if not url.endswith("/") else url.split("/")[-2]
-        return course_name
+        mobj = re.search(r'(?x)(?:(.+)\.com/(?P<course_name>[a-zA-Z0-9_-]+))/', url, re.I)
+        if mobj:
+            return mobj.group('course_name')
 
     def _extract_cookie_string(self, raw_cookies):
         cookies = {}
@@ -253,6 +252,21 @@ class Udemy(ProgressBar):
                 })
         return _temp
 
+    def _extract_audio(self, assets):
+        _temp = []
+        download_urls = assets.get('download_urls')
+        filename = self._sanitize(assets.get('filename'))
+        if download_urls and isinstance(download_urls, dict):
+            extension = filename.rsplit('.', 1)[-1] if '.' in filename else ''
+            download_url = download_urls.get('Audio', [])[0].get('file')
+            _temp.append({
+                'type' : 'audio',
+                'filename' : filename,
+                'extension' : extension,
+                'download_url' : download_url
+                })
+        return _temp
+
     def _extract_sources(self, sources):
         _temp   =   []
         if sources and isinstance(sources, list):
@@ -260,6 +274,8 @@ class Udemy(ProgressBar):
                 label           = source.get('label')
                 download_url    = source.get('file')
                 if not download_url:
+                    continue
+                if label.lower() == 'audio':
                     continue
                 height = label if label else None
                 if height == "2160":
@@ -356,7 +372,8 @@ class Udemy(ProgressBar):
         course_id, course_info = self._extract_course_info(url)
 
         if course_info and isinstance(course_info, dict):
-            course_title = self._course_name(url)
+            name = course_info.get('url').replace('/', '')
+            course_title = name if name else self._course_name(url)
             isenrolled = course_info['features'].get('enroll')
             if not isenrolled:
                 sys.stdout.write(fc + sd + "[" + fr + sb + "-" + fc + sd + "] : " + fr + sb + "Udemy Says you are not enrolled in course.")
@@ -450,6 +467,8 @@ class Udemy(ProgressBar):
                                 retVal      = self._extract_file(asset)
                             elif asset_type == 'presentation':
                                 retVal      = self._extract_ppt(asset)
+                            elif asset_type == 'audio':
+                                retVal      = self._extract_audio(asset)
 
 
                         if view_html:
@@ -551,6 +570,6 @@ class Udemy(ProgressBar):
                     _udemy['chapters'][counter]['lectures'] = lectures
                     _udemy['chapters'][counter]['lectures_count'] = len(lectures)
             _udemy['total_chapters'] = len(_udemy['chapters'])
-            _udemy['total_lectures'] = sum([entry.get('lectures_count') for entry in _udemy['chapters'] if entry])
+            _udemy['total_lectures'] = sum([entry.get('lectures_count', 0) for entry in _udemy['chapters'] if entry])
 
         return _udemy
